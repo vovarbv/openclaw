@@ -131,6 +131,8 @@ suite.define(() => {
           await waitForControlUiGatewayReady(page);
           const composer = page.locator(".agent-chat__input").first();
           const model = composer.locator("[data-chat-model-select]");
+          // Playwright does not treat a summary's aria-disabled state as actionability.
+          await expect.poll(() => model.getAttribute("aria-disabled")).toBe("false");
           await model.click();
           // A failed background refresh must not add chrome above a usable list.
           await composer.locator('[data-chat-model-option="openai/gpt-5.4"]').waitFor();

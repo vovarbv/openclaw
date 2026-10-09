@@ -13,7 +13,7 @@ import {
   type AuthProfileUsageReceipt,
 } from "./store.worker-contract.js";
 import { reduceAuthProfileFailure } from "./usage-reduction.js";
-import { resetAuthProfileFailureState } from "./usage-state.js";
+import { resolveAuthProfileSuccessState } from "./usage-state.js";
 
 /** Reduce the authoritative health row without rewriting credential bytes. */
 export function recordAuthProfileUsageInDatabase(
@@ -58,10 +58,14 @@ export function recordAuthProfileUsageInDatabase(
   const next =
     reduction.kind === "success"
       ? !profile.setup?.replacement && canonicalProvider(profile.provider) === input.providerKey
-        ? resetAuthProfileFailureState(previous ?? {}, {
-            lastProbeAt: now,
-            ...(input.inherited ? {} : { lastUsed: reduction.lastUsed }),
-          })
+        ? resolveAuthProfileSuccessState(
+            previous ?? {},
+            { now, startedAt: reduction.startedAt },
+            {
+              lastProbeAt: now,
+              ...(input.inherited ? {} : { lastUsed: reduction.lastUsed }),
+            },
+          )
         : undefined
       : reduceAuthProfileFailure(profile, previous, reduction, now);
   if (!next) {

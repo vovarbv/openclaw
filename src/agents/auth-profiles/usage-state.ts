@@ -46,6 +46,28 @@ export function resetAuthProfileFailureState(
   };
 }
 
+/**
+ * Clears failure windows after a successful run. A run that started before an active
+ * subscription block was recorded only proves the account served before exhaustion,
+ * so that block survives until its reported reset.
+ */
+export function resolveAuthProfileSuccessState(
+  existing: ProfileUsageStats,
+  params: { now: number; startedAt?: number },
+  overrides?: Partial<ProfileUsageStats>,
+): ProfileUsageStats {
+  const next = resetAuthProfileFailureState(existing, overrides);
+  const keepBlock =
+    params.startedAt !== undefined &&
+    existing.blockedReason === "subscription_limit" &&
+    isActiveUnusableWindow(existing.blockedUntil, params.now) &&
+    typeof existing.lastFailureAt === "number" &&
+    existing.lastFailureAt >= params.startedAt;
+  return keepBlock
+    ? { ...next, ...Object.fromEntries(blockedFields.map((field) => [field, existing[field]])) }
+    : next;
+}
+
 /** Returns true for providers whose auth-profile cooldowns are provider-managed. */
 export function isAuthCooldownBypassedForProvider(provider: string | undefined): boolean {
   const normalized = normalizeProviderId(provider ?? "");

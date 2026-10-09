@@ -59,6 +59,7 @@ import {
   resolveAuthProfileOrderWithMetadata,
 } from "./order.js";
 import { markAuthProfileSuccess } from "./profiles.js";
+import { markAuthProfileBlockedUntil } from "./usage.js";
 
 describe("resolveAuthProfileOrder", () => {
   beforeEach(() => {
@@ -809,6 +810,59 @@ describe("resolveAuthProfileOrder", () => {
       expect(Number.isFinite(lastUsed)).toBe(true);
       expect(lastUsed).toBeGreaterThanOrEqual(beforeSuccess);
       expect(lastUsed).toBeLessThanOrEqual(afterSuccess);
+    } finally {
+      closeAuthProfileReadPool({ kind: "root", rootPath: agentDir });
+      await closeOpenClawAgentDatabasesAsync(agentDir);
+      await rm(agentDir, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    {
+      label: "keeps a block recorded after the successful run started",
+      startedAtOffset: -1,
+      kept: true,
+    },
+    { label: "lifts a block when a later probe succeeds", startedAtOffset: 1, kept: false },
+  ])("$label", async ({ startedAtOffset, kept }) => {
+    const agentDir = await mkdtemp(path.join(os.tmpdir(), "openclaw-auth-profile-late-success-"));
+    const profileId = "fixture-provider:default";
+    try {
+      const store: AuthProfileStore = {
+        version: 1,
+        profiles: {
+          [profileId]: oauthCred({
+            provider: "fixture-provider",
+            access: "token",
+            refresh: "refresh",
+            expires: Date.now() + 60_000,
+          }),
+        },
+      };
+      saveAuthProfileStore(store, agentDir);
+      const blockedUntil = Date.now() + 2 * 60 * 60 * 1000;
+      await markAuthProfileBlockedUntil({
+        store,
+        profileId,
+        blockedUntil,
+        source: "claude_rate_limits",
+        agentDir,
+      });
+      const blockedAt = store.usageStats?.[profileId]?.lastFailureAt;
+      expect(blockedAt).toEqual(expect.any(Number));
+
+      await markAuthProfileSuccess({
+        store,
+        provider: "fixture-provider",
+        profileId,
+        agentDir,
+        startedAt: blockedAt! + startedAtOffset,
+      });
+
+      const usageStats = store.usageStats?.[profileId];
+      expect(usageStats?.blockedUntil).toBe(kept ? blockedUntil : undefined);
+      expect(usageStats?.blockedSource).toBe(kept ? "claude_rate_limits" : undefined);
+      expect(store.lastGood).toEqual({ "fixture-provider": profileId });
     } finally {
       closeAuthProfileReadPool({ kind: "root", rootPath: agentDir });
       await closeOpenClawAgentDatabasesAsync(agentDir);

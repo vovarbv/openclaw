@@ -631,8 +631,10 @@ export async function markAuthProfileSuccess(params: {
   provider: string;
   profileId: string;
   agentDir?: string;
+  /** When the successful run started; see resolveAuthProfileSuccessState. */
+  startedAt?: number;
 }): Promise<void> {
-  const { store, provider, profileId, agentDir } = params;
+  const { store, provider, profileId, agentDir, startedAt } = params;
   const providerKey = resolveProviderIdForAuth(provider);
   const profile = structuredClone(store.profiles[profileId]);
   if (
@@ -643,7 +645,12 @@ export async function markAuthProfileSuccess(params: {
     return;
   }
   const updated = await runAuthProfileUsage(async () => {
-    const reduction = { kind: "success" as const, expectedProfile: profile, lastUsed: Date.now() };
+    const reduction = {
+      kind: "success" as const,
+      expectedProfile: profile,
+      lastUsed: Date.now(),
+      ...(startedAt === undefined ? {} : { startedAt }),
+    };
     if (isUserModelAuthProfileId(profileId)) {
       return preparePersonalAuthProfileUsage(store, profileId).record(reduction);
     }

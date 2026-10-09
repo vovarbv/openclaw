@@ -34,7 +34,7 @@ import type {
   PersonalAuthProfileUsageResult,
 } from "./usage-reduction.js";
 import { reduceAuthProfileFailure } from "./usage-reduction.js";
-import { resetAuthProfileFailureState } from "./usage-state.js";
+import { resolveAuthProfileSuccessState } from "./usage-state.js";
 
 export const authProfileOperations = {
   "authProfiles.bootstrap": bootstrapSharedAuthStoreInWorker,
@@ -130,10 +130,11 @@ export const authProfileOperations = {
         const previous = profile.usageStats;
         const next =
           input.reduction.kind === "success"
-            ? resetAuthProfileFailureState(previous ?? {}, {
-                lastUsed: input.reduction.lastUsed,
-                lastProbeAt: now,
-              })
+            ? resolveAuthProfileSuccessState(
+                previous ?? {},
+                { now, startedAt: input.reduction.startedAt },
+                { lastUsed: input.reduction.lastUsed, lastProbeAt: now },
+              )
             : reduceAuthProfileFailure(profile.credential, previous, input.reduction, now);
         if (!next) {
           return false;

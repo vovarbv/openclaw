@@ -48,7 +48,7 @@ async function settleCliAuthProfile(params: {
   provider: string;
   agentDir?: string;
   terminal:
-    | { outcome: "success" }
+    | { outcome: "success"; startedAt: number }
     | {
         outcome: "failure";
         error: unknown;
@@ -59,11 +59,14 @@ async function settleCliAuthProfile(params: {
 }): Promise<void> {
   try {
     if (params.terminal.outcome === "success") {
+      // A concurrent turn on this account may have recorded its subscription
+      // block while this one was running; finishing later must not lift it.
       await markAuthProfileSuccess({
         store: params.store,
         profileId: params.profileId,
         provider: params.provider,
         agentDir: params.agentDir,
+        startedAt: params.terminal.startedAt,
       });
       return;
     }
@@ -212,6 +215,7 @@ export async function settlePreparedCliRun(params: {
   const { context, diagnosticLifecycle, run } = params;
   const runParams = context.params;
   let outcome: { result: EmbeddedAgentRunResult } | { error: unknown };
+  const startedAt = Date.now();
   try {
     outcome = { result: await run() };
   } catch (error) {
@@ -259,7 +263,7 @@ export async function settlePreparedCliRun(params: {
             modelId: context.modelId,
           }
         : outcome.result.meta.executionTrace?.attempts?.at(-1)?.result === "success"
-          ? { outcome: "success" }
+          ? { outcome: "success", startedAt }
           : undefined;
     if (terminal) {
       await settleCliAuthProfile({

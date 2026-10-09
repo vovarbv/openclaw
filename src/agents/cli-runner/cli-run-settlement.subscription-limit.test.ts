@@ -2,12 +2,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthProfileStore } from "../auth-profiles/types.js";
 import { buildPreparedCliRunContext } from "../cli-runner.test-helpers.js";
+import type { EmbeddedAgentRunResult } from "../embedded-agent-runner.js";
 import { FailoverError } from "../failover-error.js";
 import { settlePreparedCliRun } from "./cli-run-settlement.js";
 
 const authMocks = vi.hoisted(() => ({
   markAuthProfileBlockedUntil: vi.fn(async (_params: unknown) => undefined),
   markAuthProfileFailure: vi.fn(async (_params: unknown) => undefined),
+  markAuthProfileSuccess: vi.fn(async (_params: unknown) => undefined),
 }));
 
 vi.mock("../auth-profiles.js", async (importOriginal) => ({
@@ -18,7 +20,7 @@ vi.mock("../auth-profiles.js", async (importOriginal) => ({
 const profileId = "anthropic:d";
 const resetsAtMs = Date.now() + 2 * 60 * 60 * 1000;
 
-function settleFailure(error: FailoverError) {
+function settle(run: () => Promise<EmbeddedAgentRunResult>) {
   const store: AuthProfileStore = {
     version: 1,
     profiles: { [profileId]: { type: "oauth", provider: "anthropic", access: "", refresh: "" } },
@@ -29,11 +31,12 @@ function settleFailure(error: FailoverError) {
     authProfileStore: store,
     agentDir: "/tmp/agent",
   };
-  return settlePreparedCliRun({
-    context,
-    run: async () => {
-      throw error;
-    },
+  return settlePreparedCliRun({ context, run });
+}
+
+function settleFailure(error: FailoverError) {
+  return settle(async () => {
+    throw error;
   });
 }
 
@@ -50,6 +53,24 @@ describe("CLI subscription-limit settlement", () => {
   beforeEach(() => {
     authMocks.markAuthProfileBlockedUntil.mockClear();
     authMocks.markAuthProfileFailure.mockClear();
+    authMocks.markAuthProfileSuccess.mockClear();
+  });
+
+  it("reports when a successful run started so a concurrent block survives", async () => {
+    const beforeRun = Date.now();
+    let startedBy = 0;
+    await settle(async () => {
+      startedBy = Date.now();
+      return {
+        payloads: [],
+        meta: { durationMs: 1, executionTrace: { attempts: [{ result: "success" }] } },
+      } as unknown as EmbeddedAgentRunResult;
+    });
+    const startedAt = (
+      authMocks.markAuthProfileSuccess.mock.calls[0]?.[0] as { startedAt?: number } | undefined
+    )?.startedAt;
+    expect(startedAt).toBeGreaterThanOrEqual(beforeRun);
+    expect(startedAt).toBeLessThanOrEqual(startedBy);
   });
 
   it("blocks the whole profile until the reported account reset", async () => {

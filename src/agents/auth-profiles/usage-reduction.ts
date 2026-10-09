@@ -149,7 +149,13 @@ export type AuthProfileFailureReduction = {
 };
 
 export type PersonalAuthProfileUsageReduction =
-  | { kind: "success"; expectedProfile: AuthProfileCredential; lastUsed: number }
+  | {
+      kind: "success";
+      expectedProfile: AuthProfileCredential;
+      lastUsed: number;
+      /** Run start; a success that began before an active subscription block keeps it. */
+      startedAt?: number;
+    }
   | ({ kind: "failure" } & AuthProfileFailureReduction);
 
 export type PersonalAuthProfileUsageResult = {

@@ -670,6 +670,67 @@ describe("executePreparedCliRun supervisor output capture", () => {
     });
   });
 
+  it.each([
+    { rateLimitType: "five_hour", accountWide: true },
+    { rateLimitType: "seven_day_opus", accountWide: false },
+  ])(
+    "classifies a Claude $rateLimitType subscription rejection as a rate limit",
+    async ({ rateLimitType, accountWide }) => {
+      // Recorded Claude Code 2.1.283 stream-json for an exhausted window.
+      const resetsAt = 1_791_547_800;
+      const limitText = "You've hit your session limit · resets 2:10pm (Europe/Warsaw)";
+      mockOutput(
+        [
+          jsonl({
+            type: "rate_limit_event",
+            rate_limit_info: { status: "rejected", resetsAt, rateLimitType },
+          }),
+          // A later event for another window must not erase the rejection.
+          jsonl({
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "allowed",
+              resetsAt: resetsAt + 3600,
+              rateLimitType: "seven_day_sonnet",
+            },
+          }),
+          jsonl({
+            type: "assistant",
+            error: "rate_limit",
+            is_api_error_message: true,
+            message: {
+              model: "<synthetic>",
+              stop_reason: "stop_sequence",
+              content: [{ type: "text", text: limitText }],
+            },
+          }),
+          jsonl({
+            type: "result",
+            subtype: "success",
+            is_error: true,
+            api_error_status: 429,
+            terminal_reason: "api_error",
+            result: limitText,
+            session_id: "session-limit",
+          }),
+        ],
+        { exitCode: 1 },
+      );
+      await expect(
+        executePreparedCliRun(
+          buildPreparedCliRunContext({ output: "jsonl", provider: "claude-cli" }),
+        ),
+      ).rejects.toMatchObject({
+        name: "FailoverError",
+        reason: "rate_limit",
+        status: 429,
+        message: limitText,
+        // Only an account window carries its reset; model windows keep the backoff.
+        cliSubscriptionLimit: accountWide ? { resetsAtMs: resetsAt * 1000 } : undefined,
+      });
+    },
+  );
+
   it("fails one-shot Claude is_error results even when the process exits successfully", async () => {
     const stdout = jsonl({
       type: "result",

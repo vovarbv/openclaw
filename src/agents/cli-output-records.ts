@@ -1,4 +1,5 @@
 import { extractBalancedJsonFragments, safeParseJsonRecord } from "@openclaw/normalization-core";
+import { resolveExpiresAtMsFromEpochSeconds } from "@openclaw/normalization-core/number-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
@@ -9,6 +10,7 @@ import type {
   CliToolUseStartDelta,
   CliUsage,
 } from "./cli-output-contracts.js";
+import type { CliSubscriptionLimit } from "./failover/error.js";
 import { normalizeUsage, type UsageLike } from "./usage.js";
 
 function isClaudeCliProvider(providerId: string): boolean {
@@ -345,6 +347,35 @@ function readClaudeResultErrorsText(parsed: Record<string, unknown>): string | u
   return undefined;
 }
 
+// Only these Claude windows cover every model on the account. Model windows
+// (e.g. seven_day_opus) keep the ordinary model-scoped rate-limit backoff, so a
+// long model deadline never widens into a profile-wide block.
+const CLAUDE_ACCOUNT_RATE_LIMIT_TYPES = new Set(["five_hour", "seven_day"]);
+
+/** Reads the account-wide window a Claude `rate_limit_event` rejected, if any. */
+export function readClaudeRejectedRateLimit(
+  parsed: Record<string, unknown>,
+): CliSubscriptionLimit | undefined {
+  const info = parsed.rate_limit_info;
+  if (
+    !isRecord(info) ||
+    info.status !== "rejected" ||
+    typeof info.rateLimitType !== "string" ||
+    !CLAUDE_ACCOUNT_RATE_LIMIT_TYPES.has(info.rateLimitType)
+  ) {
+    return undefined;
+  }
+  const resetsAtMs = resolveExpiresAtMsFromEpochSeconds(info.resetsAt);
+  return resetsAtMs === undefined ? undefined : { resetsAtMs };
+}
+
+function readClaudeApiErrorStatus(parsed: Record<string, unknown>): number | undefined {
+  const status = parsed.api_error_status;
+  return typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599
+    ? status
+    : undefined;
+}
+
 function resolveCliTerminalErrorText(
   parsed: Record<string, unknown>,
   terminalFailure: CliTerminalFailure | undefined,
@@ -551,11 +582,15 @@ export function parseClaudeCliJsonlResult(params: {
       : undefined;
     const errorText = resolveCliTerminalErrorText(params.parsed, terminalFailure);
     if (errorText) {
+      const errorStatus = isClaudeStreamJsonDialect(params)
+        ? readClaudeApiErrorStatus(params.parsed)
+        : undefined;
       return {
         text: "",
         sessionId: params.sessionId,
         usage: params.usage,
         errorText,
+        ...(errorStatus === undefined ? {} : { errorStatus }),
         ...(terminalFailure ? { terminalFailure } : {}),
       };
     }

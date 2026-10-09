@@ -23,6 +23,11 @@ export type CliTimeoutContext = {
   compactionActive?: boolean;
 };
 
+/** An account-wide subscription window the CLI reported as exhausted, with its reset. */
+export type CliSubscriptionLimit = {
+  resetsAtMs: number;
+};
+
 export type FallbackAttemptRecord = {
   provider: string;
   model: string;
@@ -49,6 +54,7 @@ export class FailoverError extends Error {
   readonly lane?: string;
   readonly suspend?: boolean;
   readonly cliTimeout?: CliTimeoutContext;
+  readonly cliSubscriptionLimit?: CliSubscriptionLimit;
   // Actual timeout presence is independent of both its phase and the retry category.
   readonly timeout?: Pick<AgentRunTerminalOutcome, "timeoutPhase" | "providerStarted">;
   readonly attempts?: readonly FallbackAttemptRecord[];
@@ -74,6 +80,7 @@ export class FailoverError extends Error {
     this.lane = params.lane;
     this.suspend = params.suspend;
     this.cliTimeout = params.cliTimeout;
+    this.cliSubscriptionLimit = params.cliSubscriptionLimit;
     this.timeout = params.timeout;
     this.attempts = params.attempts;
     this.soonestCooldownExpiry = params.soonestCooldownExpiry;

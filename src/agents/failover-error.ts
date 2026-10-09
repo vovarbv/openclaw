@@ -46,6 +46,7 @@ export {
   isFailoverError,
   isSignalTimeoutReason,
   isTimeoutError,
+  type CliSubscriptionLimit,
   type CliTimeoutContext,
   type FallbackAttemptRecord,
 } from "./failover/error.js";

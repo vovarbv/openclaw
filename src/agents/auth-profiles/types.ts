@@ -102,7 +102,7 @@ export type AuthProfileCooldownClassification = "wham_token_expired" | "wham_acc
 
 /** Profile-wide blocked reason reported by provider usage probes. */
 export type AuthProfileBlockedReason = "subscription_limit";
-export type AuthProfileBlockedSource = "codex_rate_limits" | "wham";
+export type AuthProfileBlockedSource = "claude_rate_limits" | "codex_rate_limits" | "wham";
 
 /** Per-profile usage statistics for round-robin and cooldown tracking */
 export type ProfileUsageStats = {

@@ -5,6 +5,7 @@ import { createSubsystemLogger } from "../../logging/subsystem.js";
 import {
   externalCliDiscoveryForProviderAuth,
   loadAuthProfileStoreForRuntime,
+  markAuthProfileBlockedUntil,
   markAuthProfileFailure,
   markAuthProfileSuccess,
   type AuthProfileStore,
@@ -74,7 +75,21 @@ async function settleCliAuthProfile(params: {
           ? error.cliTimeout?.observedActivity
           : undefined,
     });
-    if (reason) {
+    const subscriptionLimit =
+      reason === "rate_limit" && isFailoverError(error) ? error.cliSubscriptionLimit : undefined;
+    // A reset already in the past (stale event, clock skew) cannot block; keep the backoff.
+    if (subscriptionLimit && subscriptionLimit.resetsAtMs > Date.now()) {
+      // The CLI named the exhausted account window and its reset; a short backoff
+      // would let the session return to this account before it can serve again.
+      await markAuthProfileBlockedUntil({
+        store: params.store,
+        profileId: params.profileId,
+        blockedUntil: subscriptionLimit.resetsAtMs,
+        source: "claude_rate_limits",
+        agentDir: params.agentDir,
+        runId: params.terminal.runId,
+      });
+    } else if (reason) {
       await markAuthProfileFailure({
         store: params.store,
         profileId: params.profileId,

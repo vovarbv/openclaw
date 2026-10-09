@@ -459,7 +459,12 @@ export async function executeCliProcess(params: {
     (params.outputMode === "json" && stdoutCapture.truncatedBytes === 0 ? parseOutput() : null);
   // A completed terminal record is authoritative even if the CLI hangs
   // afterward. Reclassifying it as a timeout could replay completed tools.
-  if (parsedStructuredOutput?.terminalFailure) {
+  // A provider error the CLI reported with its HTTP status is equally final;
+  // the exit-code path would drop the status and any subscription reset.
+  if (
+    parsedStructuredOutput?.terminalFailure ||
+    parsedStructuredOutput?.errorStatus !== undefined
+  ) {
     const terminalError = createCliOutputFailoverError({
       output: parsedStructuredOutput,
       ...outputErrorContext,

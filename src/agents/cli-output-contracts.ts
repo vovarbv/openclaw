@@ -10,6 +10,7 @@ import type {
   MessagingToolSourceReplyPayload,
 } from "./embedded-agent-messaging.types.js";
 import type { ToolSummaryTrace } from "./embedded-agent-runner/types.js";
+import type { CliSubscriptionLimit } from "./failover/error.js";
 
 export type CliUsage = CliBackendJsonlUsage;
 
@@ -55,6 +56,9 @@ export type CliOutput = {
   diagnosticUsage?: CliUsage;
   toolSummary?: ToolSummaryTrace;
   errorText?: string;
+  /** HTTP status the backend reported for the failed provider request. */
+  errorStatus?: number;
+  subscriptionLimit?: CliSubscriptionLimit;
   terminalFailure?: CliTerminalFailure;
   /** A caller interruption that ended the turn after usable assistant text was streamed. */
   terminalInterruption?: CliTerminalInterruption;

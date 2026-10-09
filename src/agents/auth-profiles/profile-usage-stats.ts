@@ -15,7 +15,11 @@ const AUTH_COOLDOWN_CLASSIFICATIONS = new Set<AuthProfileCooldownClassification>
   "wham_account_dead",
 ]);
 const AUTH_BLOCKED_REASONS = new Set<AuthProfileBlockedReason>(["subscription_limit"]);
-const AUTH_BLOCKED_SOURCES = new Set<AuthProfileBlockedSource>(["codex_rate_limits", "wham"]);
+const AUTH_BLOCKED_SOURCES = new Set<AuthProfileBlockedSource>([
+  "claude_rate_limits",
+  "codex_rate_limits",
+  "wham",
+]);
 
 function normalizeEnumValue<T extends string>(
   value: unknown,

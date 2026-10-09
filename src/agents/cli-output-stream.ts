@@ -40,6 +40,7 @@ import {
   pickCliSessionId,
   preferGeminiCliStreamJsonError,
   readClaudeAttributedSubagentProgressId,
+  readClaudeRejectedRateLimit,
   preferStreamedClaudeTextOverResult,
   readCliUsage,
   readGeminiCliStreamJsonError,
@@ -52,6 +53,7 @@ import {
   measureClaudePartialMessage,
   streamJsonOutputLimitErrorText,
 } from "./cli-output-stream-limits.js";
+import type { CliSubscriptionLimit } from "./failover/error.js";
 export const CLI_STREAM_JSON_MISSING_RESULT_ERROR =
   "CLI stream-json output ended without a result event.";
 const CLAUDE_SYNTHETIC_NO_RESPONSE_ERROR = "Claude CLI returned a synthetic no-response result.";
@@ -86,6 +88,7 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
   let sawGeminiStructuredOutput = false;
   let sawTerminalResult = false;
   let sawClaudeSyntheticNoResponse = false;
+  let claudeRejectedRateLimit: CliSubscriptionLimit | undefined;
   const toolTracker = createToolUseTracker();
   const outputLimits = CLI_STREAM_JSON_OUTPUT_LIMITS;
   // Classification is keyed on consumer presence so reclassified pre-tool text
@@ -305,6 +308,10 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
       sawTerminalResult = true;
     }
     observeSessionId(parsed);
+    if (claudeStreamJson && parsed.type === "rate_limit_event") {
+      // Events for other windows must not erase a rejected account window.
+      claudeRejectedRateLimit = readClaudeRejectedRateLimit(parsed) ?? claudeRejectedRateLimit;
+    }
     const nextUsage = readCliUsage(parsed);
     const isClaudeTerminalResult = claudeStreamJson && parsed.type === "result";
     if (isClaudeTerminalResult && nextUsage && usage) {
@@ -386,7 +393,11 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
         delete delivered.terminalFailure;
         result = delivered;
       } else if (result.errorText) {
-        output = result;
+        // The rejection event names the window and its reset; the failed result only says 429.
+        output =
+          result.errorStatus === 429 && claudeRejectedRateLimit
+            ? { ...result, subscriptionLimit: claudeRejectedRateLimit }
+            : result;
         return;
       }
       if (claudeStreamJson && result.text) {

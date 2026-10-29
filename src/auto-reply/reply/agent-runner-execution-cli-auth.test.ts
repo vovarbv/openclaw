@@ -26,6 +26,7 @@ import { createModelSelectionState } from "./model-selection.js";
 const state = await setupAgentRunnerExecutionTestState();
 const managedProfile = "claude-cli:managed";
 const canonicalProfile = "anthropic:managed";
+const nextProfile = "anthropic:next";
 const primaryProfile = "openai:primary";
 const googleProfile = "google:managed";
 const nativeProfile = "anthropic:claude-cli";
@@ -33,6 +34,7 @@ const customProfile = "custom-cli:managed";
 const credentials = {
   [managedProfile]: { type: "token", provider: "claude-cli", token: "synthetic-managed-token" },
   [canonicalProfile]: { type: "token", provider: "anthropic", token: "synthetic-canonical-token" },
+  [nextProfile]: { type: "token", provider: "anthropic", token: "synthetic-next-token" },
   [primaryProfile]: { type: "api_key", provider: "openai", key: "synthetic-primary-key" },
   [googleProfile]: { type: "api_key", provider: "google", key: "synthetic-google-key" },
   [nativeProfile]: { type: "token", provider: "claude-cli", token: "synthetic-native-token" },
@@ -41,6 +43,17 @@ const credentials = {
 
 describe("executeAgentTurn: CLI credential selection", () => {
   it.each([
+    {
+      name: "rotates a cooling resumed account before dispatching the next CLI turn",
+      selected: canonicalProfile,
+      source: "auto",
+      primary: "claude-cli",
+      provider: "claude-cli",
+      backend: "claude-cli",
+      profiles: [canonicalProfile, nextProfile],
+      expected: nextProfile,
+      cooldown: true,
+    },
     {
       name: "selects ordered CLI credentials after an automatic cross-provider fallback",
       selected: primaryProfile,
@@ -125,10 +138,28 @@ describe("executeAgentTurn: CLI credential selection", () => {
         },
       },
     };
-    saveAuthProfileStore({ version: 1, profiles }, followupRun.run.agentDir, {
-      filterExternalAuthProfiles: false,
-      syncExternalCli: false,
-    });
+    saveAuthProfileStore(
+      {
+        version: 1,
+        profiles,
+        ...("cooldown" in testCase
+          ? {
+              usageStats: {
+                [canonicalProfile]: {
+                  cooldownUntil: Date.now() + 60_000,
+                  cooldownReason: "rate_limit",
+                  cooldownModel: model,
+                },
+              },
+            }
+          : {}),
+      },
+      followupRun.run.agentDir,
+      {
+        filterExternalAuthProfiles: false,
+        syncExternalCli: false,
+      },
+    );
     cliBackendsTesting.setDepsForTest({
       resolveRuntimeCliBackends: () => [
         {
@@ -163,7 +194,23 @@ describe("executeAgentTurn: CLI credential selection", () => {
     );
     state.runCliAgentMock.mockResolvedValueOnce({ payloads: [{ text: "done" }], meta: {} });
     const executeAgentTurn = await getExecuteAgentTurnForTest();
-    const result = executeAgentTurn(createMinimalRunAgentTurnParams({ followupRun }));
+    const result = executeAgentTurn({
+      ...createMinimalRunAgentTurnParams({ followupRun }),
+      ...("cooldown" in testCase
+        ? {
+            getActiveSessionEntry: () => ({
+              sessionId: followupRun.run.sessionId,
+              updatedAt: 1,
+              cliSessionBindings: {
+                "claude-cli": {
+                  sessionId: "cooling-native-session",
+                  authProfileId: canonicalProfile,
+                },
+              },
+            }),
+          }
+        : {}),
+    });
     if ("error" in testCase) {
       expect(await result).toMatchObject({ kind: "final", payload: { isError: true } });
       expect(state.runCliAgentMock).not.toHaveBeenCalled();

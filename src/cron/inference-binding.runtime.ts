@@ -115,6 +115,7 @@ export async function captureCronInferenceBinding(params: {
     const profileId = await resolveCliExecutionAuthProfileId({
       cliExecutionProvider,
       authProfileProvider: model.provider,
+      modelId: model.model,
       config: cfg,
       agentDir,
       selected: selectedProfileId

@@ -7,6 +7,7 @@ import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot
 import { resolveAuthProfileOrderWithMetadata } from "./auth-profiles/order.js";
 import type { loadAuthProfileStoreForRuntimeAsync } from "./auth-profiles/store-runtime.js";
 import type { AuthProfileCredential, AuthProfileStore } from "./auth-profiles/types.js";
+import { isProfileInCooldown } from "./auth-profiles/usage-state.js";
 import { resolveCliBackendConfig, resolveCliRuntimeCanonicalProvider } from "./cli-backends.js";
 import { resolveBundledCliBackendAuthPolicy } from "./cli-runner/cli-backend-auth-policy.js";
 
@@ -30,12 +31,13 @@ export function cliBackendAcceptsAuthProfileForwarding(params: {
 }
 
 /**
- * Preserve the session account unless the user selects another or it was removed.
+ * Preserve the session account while healthy, unless the user selects another or it was removed.
  * A user-locked profile must fail closed rather than run as another user.
  */
 export function selectCliExecutionAuthProfile(params: {
   cliExecutionProvider: string;
   authProfileProvider: string;
+  modelId?: string;
   config: OpenClawConfig;
   store: AuthProfileStore;
   selected?: {
@@ -47,6 +49,8 @@ export function selectCliExecutionAuthProfile(params: {
   metadataSnapshot?: PluginMetadataSnapshot;
 }): { profileId: string; provider: string } | undefined {
   const { store } = params;
+  const now = Date.now();
+  const inCooldown = (id: string) => isProfileInCooldown(store, id, now, params.modelId);
   const selectedAuthProfileId = params.selected?.authProfileId?.trim();
   const hasExplicitSelection =
     selectedAuthProfileId && params.selected?.authProfileIdSource !== "auto";
@@ -81,6 +85,7 @@ export function selectCliExecutionAuthProfile(params: {
         ? explicitSelection || credential.type !== "api_key"
         : params.cliExecutionProvider === GOOGLE_GEMINI_CLI_PROVIDER_ID &&
           credential.type === "api_key"));
+  let unavailableProfile: { profileId: string; provider: string } | undefined;
   if (retainedProfileId) {
     const credential = store.profiles[retainedProfileId];
     if (!credential) {
@@ -88,12 +93,16 @@ export function selectCliExecutionAuthProfile(params: {
         `No credentials found for profile "${retainedProfileId}".`,
       );
     }
-    if (acceptsCredential(credential, true)) {
-      return { profileId: retainedProfileId, provider: credential.provider };
+    if (!acceptsCredential(credential, true)) {
+      throw new CliExecutionAuthProfileError(
+        `CLI backend "${params.cliExecutionProvider}" cannot use auth profile "${retainedProfileId}" owned by "${credential.provider}".`,
+      );
     }
-    throw new CliExecutionAuthProfileError(
-      `CLI backend "${params.cliExecutionProvider}" cannot use auth profile "${retainedProfileId}" owned by "${credential.provider}".`,
-    );
+    const retained = { profileId: retainedProfileId, provider: credential.provider };
+    if (hasExplicitSelection || !inCooldown(retainedProfileId)) {
+      return retained;
+    }
+    unavailableProfile = retained;
   }
 
   const providers = [params.cliExecutionProvider];
@@ -110,7 +119,11 @@ export function selectCliExecutionAuthProfile(params: {
       cfg: params.config,
       store,
       provider,
-      preferredProfile: selectedAuthProfileId,
+      preferredProfile:
+        selectedAuthProfileId && !inCooldown(selectedAuthProfileId)
+          ? selectedAuthProfileId
+          : undefined,
+      forModel: params.modelId,
       readinessMode: params.readinessMode,
       authAliasLookupParams: { metadataSnapshot: params.metadataSnapshot },
     });
@@ -119,16 +132,18 @@ export function selectCliExecutionAuthProfile(params: {
       if (
         credential &&
         acceptsCredential(credential, false) &&
-        !nativeAuthProfileIds?.includes(profileId)
+        !nativeAuthProfileIds?.includes(profileId) &&
+        (!retainedProfileId || !inCooldown(profileId))
       ) {
         return { profileId, provider: credential.provider };
       }
     }
     if (order.hasExplicitOrder) {
-      return undefined;
+      break;
     }
   }
-  return undefined;
+  // No usable replacement: preserve the failing owner, never fall back to ambient login.
+  return unavailableProfile;
 }
 
 export async function resolveCliExecutionAuthProfileId(

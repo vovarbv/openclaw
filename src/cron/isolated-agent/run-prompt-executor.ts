@@ -534,6 +534,7 @@ export function createCronPromptExecutor(
                     ? resolveCliExecutionAuthProfileId({
                         cliExecutionProvider: executionProvider,
                         authProfileProvider: providerOverride,
+                        modelId: modelOverride,
                         config: params.cfgWithAgentDefaults,
                         agentDir: params.agentDir,
                         sessionBinding: cliSessionBinding,

@@ -163,6 +163,7 @@ export async function resolveSystemAgentConfiguredRouteFromConfig(
     ? await resolveCliExecutionAuthProfileId({
         cliExecutionProvider: executionProvider,
         authProfileProvider: selection.provider,
+        modelId: selection.modelId,
         config: runConfig,
         agentDir: selection.agentDir,
         ...(selection.profileId

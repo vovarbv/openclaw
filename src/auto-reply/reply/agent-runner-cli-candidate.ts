@@ -220,6 +220,7 @@ export async function runCliFallbackCandidate(
                 ? await resolveCliExecutionAuthProfileId({
                     cliExecutionProvider: params.cliExecutionProvider,
                     authProfileProvider: params.provider,
+                    modelId: params.model,
                     config: params.runtimeConfig,
                     agentDir: params.candidateRun.agentDir,
                     selected,
@@ -231,6 +232,7 @@ export async function runCliFallbackCandidate(
             ? await resolveCliExecutionAuthProfileId({
                 cliExecutionProvider: params.cliExecutionProvider,
                 authProfileProvider: params.provider,
+                modelId: params.model,
                 config: params.runtimeConfig,
                 agentDir: params.candidateRun.agentDir,
                 selected: params.candidateRun,

@@ -297,6 +297,7 @@ export async function runAgentAttempt(params: AgentAttemptParams) {
   const buildCliAuthContext = () => ({
     cliExecutionProvider,
     authProfileProvider: params.authProfileProvider,
+    modelId: params.modelOverride,
     config: params.cfg,
     agentDir: params.agentDir,
     selected: harnessAuthSelection,

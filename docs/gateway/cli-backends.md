@@ -569,6 +569,15 @@ rows does not grant permission to seed another native session with older history
 Fresh-session seeding, saved notes, and interrupted-input recovery retain the
 [history account boundary](#history-account-boundaries). Tool restrictions are unchanged.
 
+Automatically selected saved CLI accounts keep their session affinity while usable.
+If the retained account is in cooldown for the requested model or disabled, the next
+turn can select an available compatible account from the configured auth order.
+An explicit user profile pin never rotates this way. If no eligible replacement is
+available, the retained account remains authoritative rather than falling back to
+an ambient CLI login or API-key billing. Account changes keep the OpenClaw chat but
+start a fresh native session under the history boundary below; this does not add an
+automatic retry of a failed turn.
+
 ### History account boundaries
 
 Native session compatibility and permission to replay saved OpenClaw history are separate. Clearing or replacing a native binding does not establish ownership of older transcript rows. OpenClaw records a private account fingerprint and contiguous transcript coverage before an admitted CLI turn, then advances coverage with that turn’s stored transcript writes. It never stores credential values in this metadata.
